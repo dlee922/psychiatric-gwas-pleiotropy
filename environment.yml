@@ -1,0 +1,53 @@
+name: psych-gwas
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  # Core Python
+  - python=3.11
+  - pip
+
+  # Data manipulation
+  - pandas
+  - numpy
+  - scipy
+
+  # Machine learning & clustering
+  - scikit-learn
+
+  # Visualization
+  - matplotlib
+  - seaborn
+  - plotly
+
+  # Jupyter
+  - jupyterlab
+  - ipykernel
+
+  # Statistical genetics tools
+  # - plink  # PLINK 1.9 for GWAS QC and clumping
+  # - plink2  # PLINK 2.0 for newer functionality
+
+  # Bioinformatics utilities
+  - pyliftover  # genome build coordinate conversion
+
+  # File handling
+  - openpyxl  # reading Excel files (some PGC data comes as .xlsx)
+  - pyarrow  # fast parquet read/write for processed data
+
+  # Utilities
+  - tqdm  # progress bars for long-running operations
+  - pyyaml  # config file support
+
+  # Pip-only packages
+  - pip:
+    # LDSC dependencies (we'll install ldsc separately as it has specific requirements)
+    - bitarray
+    # Genomic SEM will be run in R, but we need rpy2 to interface
+    # - rpy2  # uncomment when ready to integrate R
+    # Pathway analysis
+    - gprofiler-official  # g:Profiler API for GO/pathway enrichment
+    # Additional ML
+    - umap-learn  # UMAP for dimensionality reduction
+    - hdbscan  # density-based clustering alternative

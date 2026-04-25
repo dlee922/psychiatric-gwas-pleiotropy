@@ -21,7 +21,7 @@ def detect_separator(filepath, n_lines=5):
     else:
         opener = open
 
-    with opener(filepath, "rt") as f:
+    with opener(filepath, "rt", encoding="utf-8") as f:
         # Skip ## header lines (VCF format)
         for line in f:
             if not line.startswith("##"):
@@ -55,7 +55,7 @@ def load_sumstats(filepath, nrows=None, usecols=None, verbose=True):
     else:
         opener = open
 
-    with opener(filepath, "rt") as f:
+    with opener(filepath, "rt", encoding="utf-8") as f:
         for line in f:
             if line.startswith("##"):
                 skip_rows += 1
@@ -81,6 +81,7 @@ def load_sumstats(filepath, nrows=None, usecols=None, verbose=True):
         usecols=usecols,
         skiprows=skip_rows,
         na_values=["NA", ".", ""],
+        encoding="utf-8"
     )
 
     elapsed = time.time() - start

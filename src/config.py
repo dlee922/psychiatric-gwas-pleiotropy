@@ -48,8 +48,12 @@ CROSS_DISORDER = {
 # Replication Datasets (matching 2019 paper)
 # ============================================
 REPLICATION = {
-    "adhd2019": {
-        "path": DATA_DIR / "replication" / "adhd2019" / "daner_adhd_meta_filtered_NA_iPSYCH23_PGC11_sigPCs_woSEX_2ell6sd_EUR_Neff_70.meta.gz",
+    # "adhd2019": { # mac version
+    #     "path": DATA_DIR / "replication" / "adhd2019" / "daner_adhd_meta_filtered_NA_iPSYCH23_PGC11_sigPCs_woSEX_2ell6sd_EUR_Neff_70.meta.gz",
+    #     "description": "ADHD GWAS (Demontis et al., 2019)",
+    # },
+    "adhd2019": { 
+        "path": DATA_DIR / "replication" / "adhd2019" / "daner_meta_filtered_NA_iPSYCH23_PGC11_sigPCs_woSEX_2ell6sd_EUR_Neff_70.meta",
         "description": "ADHD GWAS (Demontis et al., 2019)",
     },
     "an2019": {
@@ -72,8 +76,12 @@ REPLICATION = {
         "path": DATA_DIR / "replication" / "ocd2018" / "ocd_aug2017.gz",
         "description": "OCD GWAS (IOCDF-GC & OCGAS, 2018)",
     },
-    "scz2018": {
-        "path": DATA_DIR / "replication" / "scz2018" / "CLOZUK_PGC2noclo.METAL.assoc.dosage.fix.gz",
+    # "scz2018": { # use this one for mac
+    #     "path": DATA_DIR / "replication" / "scz2018" / "CLOZUK_PGC2noclo.METAL.assoc.dosage.fix.gz",
+    #     "description": "Schizophrenia GWAS (Pardiñas et al., 2018)",
+    # },
+    "scz2018": { # use this one for windows. windows auto extract the gz file
+        "path": DATA_DIR / "replication" / "scz2018" / "CLOZUK_PGC2noclo.METAL.assoc.dosage.fix",
         "description": "Schizophrenia GWAS (Pardiñas et al., 2018)",
     },
     "ts2019": {

@@ -6,13 +6,28 @@ Run a standardized exploration across all datasets.
 Usage: python scripts/data_exploration.py
 """
 import sys
-sys.path.insert(0, ".")
 
+class Tee:
+    """Write to both terminal and file simultaneously."""
+    def __init__(self, filepath):
+        self.file = open(filepath, "w")
+        self.terminal = sys.__stdout__
+
+    def write(self, msg):
+        self.terminal.write(msg)
+        self.file.write(msg)
+
+    def flush(self):
+        self.terminal.flush()
+        self.file.flush()
+
+    def close(self):
+        self.file.close()
+
+sys.path.insert(0, ".")
 from pathlib import Path
 output_file = Path("data/results/exploration_output.txt")
-if output_file.exists():
-    output_file.unlink()
-sys.stdout = open(output_file, "w")
+sys.stdout = Tee(output_file)
 
 import matplotlib
 matplotlib.use("Agg")

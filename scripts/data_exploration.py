@@ -6,28 +6,10 @@ Run a standardized exploration across all datasets.
 Usage: python scripts/data_exploration.py
 """
 import sys
-
-class Tee:
-    """Write to both terminal and file simultaneously."""
-    def __init__(self, filepath):
-        self.file = open(filepath, "w")
-        self.terminal = sys.__stdout__
-
-    def write(self, msg):
-        self.terminal.write(msg)
-        self.file.write(msg)
-
-    def flush(self):
-        self.terminal.flush()
-        self.file.flush()
-
-    def close(self):
-        self.file.close()
-
 sys.path.insert(0, ".")
-from pathlib import Path
-output_file = Path("data/results/exploration_output.txt")
-sys.stdout = Tee(output_file)
+
+from src.utils import setup_output, teardown_output
+output_path = setup_output("exploration_output.txt")
 
 import matplotlib
 matplotlib.use("Agg")
@@ -177,7 +159,5 @@ for factor in sorted(df_hits["gwas_name"].unique()):
     print(f"    {factor}: {len(subset)} hits, P range [{subset['P'].min():.2e}, {subset['P'].max():.2e}]")
 
 if __name__ == "__main__":
-    sys.stdout.close()
-    sys.stdout = sys.__stdout__
-    print("Done — output saved to data/results/exploration_output.txt")
+    teardown_output(output_path)
     print("Phase 1: Data Exploration Complete")

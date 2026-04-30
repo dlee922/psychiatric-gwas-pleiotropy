@@ -15,6 +15,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
+import gc
+
 from pathlib import Path
 
 from src.config import CROSS_DISORDER
@@ -41,7 +43,7 @@ print("="*60)
 
 # TODO: Load the hits file using load_sumstats
 # Hint: CROSS_DISORDER["cdg2025_hits"]["path"]
-df_hits = # your code here
+df_hits = load_sumstats(CROSS_DISORDER["cdg2025_hits"]["path"])
 
 print(f"  Total loci: {len(df_hits)}")
 print(f"  Columns: {df_hits.columns.tolist()}")
@@ -50,7 +52,7 @@ print(f"  Columns: {df_hits.columns.tolist()}")
 # Hint: df_hits["SNP"].unique() — but note that the same SNP
 # can appear multiple times if it's significant for multiple factors.
 # We want unique SNPs because we'll look each one up once in the factor files.
-hit_snps = # your code here
+hit_snps = df_hits["SNP"].unique()
 print(f"  Unique lead SNPs: {len(hit_snps)}")
 
 
@@ -76,6 +78,7 @@ FACTOR_KEYS = {
     "F3_Neurodev":       "cdg2025_F3_neurodev",
     "F4_Internalizing":  "cdg2025_F4_internalizing",
     "F5_Substance":      "cdg2025_F5_substance",
+    "PFactor":           "cdg2025_pfactor",
 }
 
 # TODO: Loop through each factor file, load it, filter to hit_snps,
@@ -103,21 +106,26 @@ factor_betas = {}
 
 for factor_name, config_key in FACTOR_KEYS.items():
     print(f"\n  Loading {factor_name}...")
-    # TODO: your code here
-    pass
+    df_factor = load_sumstats(CROSS_DISORDER[config_key]["path"])
+    filtered = df_factor[df_factor["SNP"].isin(hit_snps)]
+    filtered.set_index("SNP")
+    factor_betas[factor_name] = filtered["BETA"]
+    del df_factor
+    gc.collect()
 
 # TODO: Combine into effect matrix
 # Hint: effect_matrix = pd.DataFrame(factor_betas)
-effect_matrix = # your code here
+effect_matrix = pd.DataFrame(factor_betas)
+
 
 print(f"\n  Effect matrix shape: {effect_matrix.shape}")
-print(f"  Expected: ({len(hit_snps)}, 5)")
+print(f"  Expected: ({len(hit_snps)}, 6)")
 
 # TODO: Check for missing values — if any SNPs weren't found in a factor file
 # Hint: effect_matrix.isnull().sum()
 # If there are NaNs, investigate why. Likely won't be any since all factor
 # files share the same SNP set.
-
+effect_matrix.isnull().sum()
 
 # ============================================
 # STEP 3: Quick sanity checks on the effect matrix
@@ -128,6 +136,7 @@ print("="*60)
 
 # TODO: Print basic statistics for each factor column
 # Hint: effect_matrix.describe()
+effect_matrix.describe()
 
 # TODO: Check the correlation between factors
 # Hint: effect_matrix.corr()
@@ -135,6 +144,7 @@ print("="*60)
 # Genomic SEM extracts orthogonal-ish factors, but they're not
 # perfectly uncorrelated. High correlation between two factor
 # columns would mean they carry redundant information for clustering.
+effect_matrix.corr()
 
 
 # ============================================
@@ -155,7 +165,9 @@ print("="*60)
 
 from sklearn.preprocessing import StandardScaler
 
-# your code here
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(effect_matrix)
+em_indices = effect_matrix.index
 
 print(f"  Scaled matrix shape: {X_scaled.shape}")
 print(f"  Column means (should be ~0): {X_scaled.mean(axis=0).round(6)}")
@@ -174,32 +186,27 @@ print("="*60)
 
 # TODO: Compute the linkage matrix and plot a dendrogram
 # Hint:
-#   from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
-#   from scipy.spatial.distance import pdist
-#
-#   # Compute pairwise distances
-#   distances = pdist(X_scaled, metric="euclidean")
-#
-#   # Compute linkage (try "ward" — minimizes within-cluster variance)
-#   Z_linkage = linkage(distances, method="ward")
-#
-#   # Plot dendrogram
-#   fig, ax = plt.subplots(figsize=(14, 6))
-#   dendrogram(Z_linkage, ax=ax, truncate_mode="lastp", p=30,
-#              leaf_rotation=90, leaf_font_size=8)
-#   ax.set_title("Hierarchical Clustering Dendrogram (Ward, Euclidean)")
-#   ax.set_xlabel("Cluster (size)")
-#   ax.set_ylabel("Distance")
-#   fig.savefig(FIGURES_DIR / "dendrogram_ward.png", dpi=300, bbox_inches="tight")
+from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
+from scipy.spatial.distance import pdist
+
+# Compute pairwise distances
+distances = pdist(X_scaled, metric="euclidean")
+
+# Compute linkage (try "ward" — minimizes within-cluster variance)
+Z_linkage = linkage(distances, method="ward")
+
+# Plot dendrogram
+fig, ax = plt.subplots(figsize=(14, 6))
+dendrogram(Z_linkage, ax=ax, truncate_mode="lastp", p=30,
+            leaf_rotation=90, leaf_font_size=8)
+ax.set_title("Hierarchical Clustering Dendrogram (Ward, Euclidean)")
+ax.set_xlabel("Cluster (size)")
+ax.set_ylabel("Distance")
+fig.savefig(FIGURES_DIR / "dendrogram_ward.png", dpi=300, bbox_inches="tight")
 #
 # The dendrogram will suggest natural cluster counts — look for
 # large vertical gaps. These indicate where merging clusters
 # requires a big jump in distance (natural breakpoints).
-
-from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
-from scipy.spatial.distance import pdist
-
-# your code here
 
 
 # ============================================
@@ -216,38 +223,33 @@ print("="*60)
 
 # TODO: Run k-means for k=2 to k=10, store silhouette scores
 # Hint:
-#   from sklearn.cluster import KMeans
-#   from sklearn.metrics import silhouette_score
-#
-#   k_range = range(2, 11)
-#   kmeans_results = {}  # k -> {"model": fitted_model, "silhouette": score}
-#
-#   for k in k_range:
-#       km = KMeans(n_clusters=k, n_init=50, random_state=42)
-#       labels = km.fit_predict(X_scaled)
-#       sil = silhouette_score(X_scaled, labels)
-#       kmeans_results[k] = {"model": km, "labels": labels, "silhouette": sil}
-#       print(f"    k={k}: silhouette={sil:.4f}")
-#
-# n_init=50 runs 50 random initializations and picks the best.
-# This matters because k-means is sensitive to initialization.
-
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+
+k_range = range(2, 11)
+kmeans_results = {}  # k -> {"model": fitted_model, "silhouette": score}
+
+for k in k_range:
+    km = KMeans(n_clusters=k, n_init=50, random_state=42)
+    labels = km.fit_predict(X_scaled)
+    sil = silhouette_score(X_scaled, labels)
+    kmeans_results[k] = {"model": km, "labels": labels, "silhouette": sil}
+    print(f"    k={k}: silhouette={sil:.4f}")
+
+# n_init=50 runs 50 random initializations and picks the best.
+# This matters because k-means is sensitive to initialization.
 
 # your code here
 
 # TODO: Plot silhouette scores vs k (elbow plot)
 # Hint:
-#   fig, ax = plt.subplots(figsize=(8, 5))
-#   ax.plot(list(k_range), [kmeans_results[k]["silhouette"] for k in k_range],
-#           "bo-", linewidth=2)
-#   ax.set_xlabel("Number of clusters (k)")
-#   ax.set_ylabel("Silhouette Score")
-#   ax.set_title("K-Means: Silhouette Score vs k")
-#   fig.savefig(FIGURES_DIR / "kmeans_silhouette.png", dpi=300, bbox_inches="tight")
-
-# your code here
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(list(k_range), [kmeans_results[k]["silhouette"] for k in k_range],
+        "bo-", linewidth=2)
+ax.set_xlabel("Number of clusters (k)")
+ax.set_ylabel("Silhouette Score")
+ax.set_title("K-Means: Silhouette Score vs k")
+fig.savefig(FIGURES_DIR / "kmeans_silhouette.png", dpi=300, bbox_inches="tight")
 
 
 # ============================================
@@ -264,28 +266,23 @@ print("="*60)
 
 # TODO: Run GMM for k=2 to k=10, store BIC and silhouette
 # Hint:
-#   from sklearn.mixture import GaussianMixture
-#
-#   gmm_results = {}
-#   for k in k_range:
-#       gmm = GaussianMixture(n_components=k, n_init=10,
-#                              covariance_type="full", random_state=42)
-#       gmm.fit(X_scaled)
-#       labels = gmm.predict(X_scaled)
-#       bic = gmm.bic(X_scaled)
-#       sil = silhouette_score(X_scaled, labels)
-#       gmm_results[k] = {"model": gmm, "labels": labels,
-#                          "bic": bic, "silhouette": sil}
-#       print(f"    k={k}: BIC={bic:.1f}, silhouette={sil:.4f}")
-
 from sklearn.mixture import GaussianMixture
 
-# your code here
+gmm_results = {}
+for k in k_range:
+    gmm = GaussianMixture(n_components=k, n_init=10,
+                            covariance_type="full", random_state=42)
+    gmm.fit(X_scaled)
+    labels = gmm.predict(X_scaled)
+    bic = gmm.bic(X_scaled)
+    sil = silhouette_score(X_scaled, labels)
+    gmm_results[k] = {"model": gmm, "labels": labels,
+                        "bic": bic, "silhouette": sil}
+    print(f"    k={k}: BIC={bic:.1f}, silhouette={sil:.4f}")
+
 
 # TODO: Plot BIC vs k (look for the "elbow" — where BIC stops dropping fast)
 # Hint: same pattern as silhouette plot but with BIC on y-axis
-
-# your code here
 
 
 # ============================================
@@ -304,37 +301,31 @@ print("="*60)
 
 # TODO: Run DBSCAN with a few eps values
 # Hint:
-#   from sklearn.cluster import DBSCAN
-#   from sklearn.neighbors import NearestNeighbors
-#
-#   # First, use k-nearest neighbors to estimate a good eps
-#   # Plot the k-distance graph (sorted distances to 5th nearest neighbor)
-#   nn = NearestNeighbors(n_neighbors=5)
-#   nn.fit(X_scaled)
-#   distances, _ = nn.kneighbors(X_scaled)
-#   k_distances = np.sort(distances[:, -1])  # distance to 5th neighbor
-#
-#   fig, ax = plt.subplots(figsize=(8, 5))
-#   ax.plot(k_distances)
-#   ax.set_xlabel("Points (sorted)")
-#   ax.set_ylabel("5th Nearest Neighbor Distance")
-#   ax.set_title("K-Distance Graph (for eps selection)")
-#   fig.savefig(FIGURES_DIR / "dbscan_kdistance.png", dpi=300, bbox_inches="tight")
-#
-#   # Look for the "elbow" in this plot — that's your eps
-#   # Then try a few values around that elbow:
-#   for eps_val in [0.5, 1.0, 1.5, 2.0]:
-#       db = DBSCAN(eps=eps_val, min_samples=5)
-#       labels = db.fit_predict(X_scaled)
-#       n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-#       n_noise = (labels == -1).sum()
-#       print(f"    eps={eps_val}: {n_clusters} clusters, {n_noise} noise points")
-
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
 
-# your code here
+# First, use k-nearest neighbors to estimate a good eps
+# Plot the k-distance graph (sorted distances to 5th nearest neighbor)
+nn = NearestNeighbors(n_neighbors=5)
+nn.fit(X_scaled)
+distances, _ = nn.kneighbors(X_scaled)
+k_distances = np.sort(distances[:, -1])  # distance to 5th neighbor
 
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(k_distances)
+ax.set_xlabel("Points (sorted)")
+ax.set_ylabel("5th Nearest Neighbor Distance")
+ax.set_title("K-Distance Graph (for eps selection)")
+fig.savefig(FIGURES_DIR / "dbscan_kdistance.png", dpi=300, bbox_inches="tight")
+
+# Look for the "elbow" in this plot — that's your eps
+# Then try a few values around that elbow:
+for eps_val in [0.5, 1.0, 1.5, 2.0]:
+    db = DBSCAN(eps=eps_val, min_samples=5)
+    labels = db.fit_predict(X_scaled)
+    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+    n_noise = (labels == -1).sum()
+    print(f"    eps={eps_val}: {n_clusters} clusters, {n_noise} noise points")
 
 # ============================================
 # STEP 9: Pick best k and visualize
@@ -350,11 +341,11 @@ print("  Step 9: Visualization with best k")
 print("="*60)
 
 # TODO: Set your chosen k based on the results above
-BEST_K = # your choice here — look at the silhouette plots
+# BEST_K = # your choice here — look at the silhouette plots
 
 # TODO: Get the cluster labels from k-means at BEST_K
 # Hint: best_labels = kmeans_results[BEST_K]["labels"]
-best_labels = # your code here
+# best_labels = # your code here
 
 # --- 9A: Heatmap of effect matrix sorted by cluster ---
 # This is the money figure. It shows how loci within each cluster

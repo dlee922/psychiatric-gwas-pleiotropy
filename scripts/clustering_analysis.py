@@ -1,14 +1,11 @@
 """
 Phase 2: Cross-Factor Effect Matrix & Clustering
 =================================================
-Build the locus x factor BETA matrix from CDG2025 data,
+Build the locus x factor z-score matrix from CDG2025 data,
 then run hierarchical, k-means, GMM, and DBSCAN clustering.
 
-HOW TO USE:
-  - Uncomment one step at a time, top to bottom
-  - Run the full script after each uncomment
-  - Each step prints its results and saves figures
-  - Later steps depend on earlier ones, so keep them uncommented
+Approach: Sign-align all SNPs to positive F4 (Internalizing),
+preserving directional patterns across factors.
 
 Usage: python scripts/clustering_analysis.py
 """
@@ -44,33 +41,20 @@ print("="*60)
 print("  Step 1: Loading hits file")
 print("="*60)
 
-# TODO: Load the hits file using load_sumstats
-# Hint: CROSS_DISORDER["cdg2025_hits"]["path"]
 df_hits = load_sumstats(CROSS_DISORDER["cdg2025_hits"]["path"])
-
 print(f"  Total loci: {len(df_hits)}")
 print(f"  Columns: {df_hits.columns.tolist()}")
 
-# TODO: Extract the unique lead SNP rsIDs from the hits file
-# Hint: df_hits["SNP"].unique() — but note that the same SNP
-# can appear multiple times if it's significant for multiple factors.
-# We want unique SNPs because we'll look each one up once in the factor files.
 hit_snps = df_hits["SNP"].unique()
 print(f"  Unique lead SNPs: {len(hit_snps)}")
-
-# Quick look at how many duplicates there are:
 print(f"  Total rows (719) vs unique SNPs ({len(hit_snps)}) = {719 - len(hit_snps)} duplicated across factors")
 
 
 # ============================================
 # STEP 2: Build cross-factor effect matrix
 # ============================================
-# For each factor (F1-PFactor), load the full file (~2.8M SNPs),
-# filter to our hit SNPs, and extract the BETA value.
-# End result: a DataFrame with rows=SNPs, columns=factors
-
 print("\n" + "="*60)
-print("  Step 2: Building cross-factor effect matrix")
+print("  Step 2: Building cross-factor z-score matrix")
 print("="*60)
 
 FACTOR_KEYS = {
@@ -79,132 +63,132 @@ FACTOR_KEYS = {
     "F3_Neurodev":       "cdg2025_F3_neurodev",
     "F4_Internalizing":  "cdg2025_F4_internalizing",
     "F5_Substance":      "cdg2025_F5_substance",
-    "PFactor":           "cdg2025_pfactor",
 }
 
-factor_betas = {}
+factor_zscores = {}
 
 for factor_name, config_key in FACTOR_KEYS.items():
     print(f"\n  Loading {factor_name}...")
     df_factor = load_sumstats(CROSS_DISORDER[config_key]["path"])
     filtered = df_factor[df_factor["SNP"].isin(hit_snps)]
-    filtered.set_index("SNP")
-    factor_betas[factor_name] = filtered["BETA"]
+    factor_zscores[factor_name] = filtered.set_index("SNP").eval("BETA / SE")
+    print(f"    Found {len(filtered)} / {len(hit_snps)} hit SNPs")
     del df_factor
     gc.collect()
 
-# TODO: Combine into effect matrix
-# Hint: effect_matrix = pd.DataFrame(factor_betas)
-effect_matrix = pd.DataFrame(factor_betas)
+effect_matrix = pd.DataFrame(factor_zscores)
 
+print(f"\n  Raw effect matrix shape: {effect_matrix.shape}")
+print(f"  Expected: ({len(hit_snps)}, 5)")
+print(f"  Missing values per column:\n{effect_matrix.isnull().sum()}")
 
-print(f"\n  Effect matrix shape: {effect_matrix.shape}")
-print(f"  Expected: ({len(hit_snps)}, 6)")
+# Sign-alignment: flip each SNP so F4_Internalizing is always positive.
+# This removes the arbitrary allele direction while preserving the
+# relative pattern of effects across factors.
+sign = np.sign(effect_matrix["F4_Internalizing"])
+# Handle any exact zeros (unlikely but safe)
+sign = sign.replace(0, 1)
+effect_matrix_aligned = effect_matrix.multiply(sign, axis=0)
 
-# TODO: Check for missing values — if any SNPs weren't found in a factor file
-# Hint: effect_matrix.isnull().sum()
-# If there are NaNs, investigate why. Likely won't be any since all factor
-# files share the same SNP set.
-effect_matrix.isnull().sum()
+n_flipped = (sign == -1).sum()
+print(f"\n  Sign-alignment to F4_Internalizing:")
+print(f"    SNPs flipped: {n_flipped} / {len(effect_matrix)} ({n_flipped/len(effect_matrix)*100:.1f}%)")
+print(f"    F4 now all positive: {(effect_matrix_aligned['F4_Internalizing'] >= 0).all()}")
+
+# Verification
+sample_snp = effect_matrix_aligned.index[0]
+print(f"\n  Verification — {sample_snp}:")
+print(f"    Raw z-scores:     {effect_matrix.loc[sample_snp].round(4).to_dict()}")
+print(f"    Aligned z-scores: {effect_matrix_aligned.loc[sample_snp].round(4).to_dict()}")
+
 
 # ============================================
-# STEP 3: Quick sanity checks on the effect matrix
+# STEP 3: Quick sanity checks
 # ============================================
 print("\n" + "="*60)
-print("  Step 3: Effect matrix sanity checks")
+print("  Step 3: Effect matrix sanity checks (sign-aligned)")
 print("="*60)
 
-# TODO: Print basic statistics for each factor column
-# Hint: effect_matrix.describe()
-effect_matrix.describe()
+print("\n  Descriptive statistics:")
+print(effect_matrix_aligned.describe().round(4).to_string())
 
-# TODO: Check the correlation between factors
-# Hint: effect_matrix.corr()
-# Question to think about: should the factors be correlated?
-# Genomic SEM extracts orthogonal-ish factors, but they're not
-# perfectly uncorrelated. High correlation between two factor
-# columns would mean they carry redundant information for clustering.
-effect_matrix.corr()
+print("\n  Inter-factor correlations:")
+print(effect_matrix_aligned.corr().round(4).to_string())
+
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+sns.heatmap(effect_matrix.corr(), annot=True, fmt=".3f",
+            cmap="RdBu_r", center=0, ax=axes[0], vmin=-1, vmax=1)
+axes[0].set_title("Raw Z-scores (before alignment)")
+
+sns.heatmap(effect_matrix_aligned.corr(), annot=True, fmt=".3f",
+            cmap="RdBu_r", center=0, ax=axes[1], vmin=-1, vmax=1)
+axes[1].set_title("Sign-aligned Z-scores")
+
+fig.tight_layout()
+fig.savefig(FIGURES_DIR / "factor_correlation_comparison.png", dpi=300, bbox_inches="tight")
+plt.close()
+print(f"\n  Saved: {FIGURES_DIR / 'factor_correlation_comparison.png'}")
 
 
 # ============================================
-# STEP 4: Standardize the effect matrix
+# STEP 4: Standardize
 # ============================================
-# Before clustering, we should standardize so that factors with
-# larger BETAs don't dominate the distance calculations.
-
 print("\n" + "="*60)
 print("  Step 4: Standardization")
 print("="*60)
 
-    # filter to only hit snps
-    filtered = df_factor[df_factor["SNP"].isin(hit_snps)]
-
-    # Set SNP as index and store the BETA column
-    factor_betas[factor_name] = factor_betas[factor_name].set_index("SNP")["BETA"]
+from sklearn.preprocessing import StandardScaler
 
 scaler = StandardScaler()
-X_scaled = scaler.fit_transform(effect_matrix)
-em_indices = effect_matrix.index
+X_scaled = scaler.fit_transform(effect_matrix_aligned)
 
-# Combine into a single DataFrame
-effect_matrix = pd.DataFrame(factor_betas)
-
-print(f"\n  Effect matrix shape: {effect_matrix.shape}")
-print(f"  Expected: ({len(hit_snps)}, 5)")
-print(f"  Missing values per column:\n{effect_matrix.isnull().sum()}")
-
-# VERIFICATION: pick a random SNP and manually check one value
-sample_snp = effect_matrix.index[0]
-print(f"\n  Verification — {sample_snp}:")
-print(f"    Effect matrix F1 BETA: {effect_matrix.loc[sample_snp, 'F1_Compulsive']}")
-print(f"    (Check this against the F1 factor file manually)")
+print(f"  Scaled matrix shape: {X_scaled.shape}")
+print(f"  Column means (should be ~0): {X_scaled.mean(axis=0).round(6)}")
+print(f"  Column stds (should be ~1):  {X_scaled.std(axis=0).round(6)}")
 
 
-# TODO: Compute the linkage matrix and plot a dendrogram
-# Hint:
+# ============================================
+# STEP 5: Hierarchical clustering
+# ============================================
+print("\n" + "="*60)
+print("  Step 5: Hierarchical clustering")
+print("="*60)
+
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
 from scipy.spatial.distance import pdist
 
-# Compute pairwise distances
 distances = pdist(X_scaled, metric="euclidean")
-
-# Compute linkage (try "ward" — minimizes within-cluster variance)
 Z_linkage = linkage(distances, method="ward")
 
-# Plot dendrogram
 fig, ax = plt.subplots(figsize=(14, 6))
 dendrogram(Z_linkage, ax=ax, truncate_mode="lastp", p=30,
-            leaf_rotation=90, leaf_font_size=8)
-ax.set_title("Hierarchical Clustering Dendrogram (Ward, Euclidean)")
+           leaf_rotation=90, leaf_font_size=8)
+ax.set_title("Hierarchical Clustering Dendrogram (Ward, Euclidean) — Sign-aligned")
 ax.set_xlabel("Cluster (size)")
 ax.set_ylabel("Distance")
 fig.savefig(FIGURES_DIR / "dendrogram_ward.png", dpi=300, bbox_inches="tight")
-#
-# The dendrogram will suggest natural cluster counts — look for
-# large vertical gaps. These indicate where merging clusters
-# requires a big jump in distance (natural breakpoints).
+plt.close()
+print(f"  Saved: {FIGURES_DIR / 'dendrogram_ward.png'}")
+
+for n_clust in [2, 3, 4, 5, 6]:
+    labels_hier = fcluster(Z_linkage, n_clust, criterion="maxclust")
+    sizes = pd.Series(labels_hier).value_counts().sort_index()
+    print(f"    k={n_clust}: cluster sizes = {sizes.tolist()}")
 
 
 # ============================================
-# STEP 6: K-Means Clustering with Silhouette Analysis
+# STEP 6: K-Means clustering
 # ============================================
-# Try k = 2 through 10. For each k, compute silhouette score.
-# The silhouette score measures how similar each point is to its
-# own cluster vs. the nearest neighboring cluster. Range: -1 to 1.
-# Higher = better defined clusters.
-
 print("\n" + "="*60)
 print("  Step 6: K-Means clustering")
 print("="*60)
 
-# TODO: Run k-means for k=2 to k=10, store silhouette scores
-# Hint:
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
 k_range = range(2, 11)
-kmeans_results = {}  # k -> {"model": fitted_model, "silhouette": score}
+kmeans_results = {}
 
 for k in k_range:
     km = KMeans(n_clusters=k, n_init=50, random_state=42)
@@ -213,199 +197,195 @@ for k in k_range:
     kmeans_results[k] = {"model": km, "labels": labels, "silhouette": sil}
     print(f"    k={k}: silhouette={sil:.4f}")
 
-# n_init=50 runs 50 random initializations and picks the best.
-# This matters because k-means is sensitive to initialization.
-
-# your code here
-
-# TODO: Plot silhouette scores vs k (elbow plot)
-# Hint:
 fig, ax = plt.subplots(figsize=(8, 5))
-ax.plot(list(k_range), [kmeans_results[k]["silhouette"] for k in k_range],
-        "bo-", linewidth=2)
+sil_scores = [kmeans_results[k]["silhouette"] for k in k_range]
+ax.plot(list(k_range), sil_scores, "bo-", linewidth=2, markersize=8)
 ax.set_xlabel("Number of clusters (k)")
 ax.set_ylabel("Silhouette Score")
-ax.set_title("K-Means: Silhouette Score vs k")
+ax.set_title("K-Means: Silhouette Score vs k — Sign-aligned")
+ax.set_xticks(list(k_range))
+best_sil_k = list(k_range)[np.argmax(sil_scores)]
+ax.axvline(x=best_sil_k, color="red", linestyle="--", alpha=0.5, label=f"Best k={best_sil_k}")
+ax.legend()
 fig.savefig(FIGURES_DIR / "kmeans_silhouette.png", dpi=300, bbox_inches="tight")
+plt.close()
+print(f"\n  Best silhouette k={best_sil_k} (score={max(sil_scores):.4f})")
+print(f"  Saved: {FIGURES_DIR / 'kmeans_silhouette.png'}")
 
 
 # ============================================
 # STEP 7: Gaussian Mixture Models
 # ============================================
-# GMM is like a soft version of k-means — each point gets a
-# probability of belonging to each cluster, not a hard assignment.
-# We evaluate with BIC (Bayesian Information Criterion) — lower is better.
-# Also compute silhouette on the hard assignments for comparison.
+print("\n" + "="*60)
+print("  Step 7: Gaussian Mixture Models")
+print("="*60)
 
-
-# TODO: Run GMM for k=2 to k=10, store BIC and silhouette
-# Hint:
 from sklearn.mixture import GaussianMixture
 
 gmm_results = {}
 for k in k_range:
     gmm = GaussianMixture(n_components=k, n_init=10,
-                            covariance_type="full", random_state=42)
+                           covariance_type="full", random_state=42)
     gmm.fit(X_scaled)
     labels = gmm.predict(X_scaled)
     bic = gmm.bic(X_scaled)
     sil = silhouette_score(X_scaled, labels)
     gmm_results[k] = {"model": gmm, "labels": labels,
-                        "bic": bic, "silhouette": sil}
+                       "bic": bic, "silhouette": sil}
     print(f"    k={k}: BIC={bic:.1f}, silhouette={sil:.4f}")
 
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+bics = [gmm_results[k]["bic"] for k in k_range]
+ax1.plot(list(k_range), bics, "go-", linewidth=2, markersize=8)
+ax1.set_xlabel("Number of components (k)")
+ax1.set_ylabel("BIC (lower = better)")
+ax1.set_title("GMM: BIC vs k — Sign-aligned")
+ax1.set_xticks(list(k_range))
 
-# TODO: Plot BIC vs k (look for the "elbow" — where BIC stops dropping fast)
-# Hint: same pattern as silhouette plot but with BIC on y-axis
+gmm_sils = [gmm_results[k]["silhouette"] for k in k_range]
+ax2.plot(list(k_range), gmm_sils, "ro-", linewidth=2, markersize=8)
+ax2.set_xlabel("Number of components (k)")
+ax2.set_ylabel("Silhouette Score")
+ax2.set_title("GMM: Silhouette vs k — Sign-aligned")
+ax2.set_xticks(list(k_range))
+
+fig.tight_layout()
+fig.savefig(FIGURES_DIR / "gmm_bic_silhouette.png", dpi=300, bbox_inches="tight")
+plt.close()
+print(f"\n  Best BIC k={list(k_range)[np.argmin(bics)]}")
+print(f"  Best silhouette k={list(k_range)[np.argmax(gmm_sils)]}")
+print(f"  Saved: {FIGURES_DIR / 'gmm_bic_silhouette.png'}")
 
 
 # ============================================
-# STEP 8: DBSCAN (density-based sanity check)
+# STEP 8: DBSCAN
 # ============================================
-# DBSCAN doesn't require specifying k — it finds clusters based
-# on density. Points in sparse regions become "noise" (label -1).
-# This is our reality check: if DBSCAN finds similar structure
-# to k-means/GMM, our clusters are likely real.
-#
-# The tricky part is choosing eps (neighborhood radius).
-
 print("\n" + "="*60)
 print("  Step 8: DBSCAN")
 print("="*60)
 
-# TODO: Run DBSCAN with a few eps values
-# Hint:
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
 
-# First, use k-nearest neighbors to estimate a good eps
-# Plot the k-distance graph (sorted distances to 5th nearest neighbor)
 nn = NearestNeighbors(n_neighbors=5)
 nn.fit(X_scaled)
-distances, _ = nn.kneighbors(X_scaled)
-k_distances = np.sort(distances[:, -1])  # distance to 5th neighbor
+distances_nn, _ = nn.kneighbors(X_scaled)
+k_distances = np.sort(distances_nn[:, -1])
 
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(k_distances)
 ax.set_xlabel("Points (sorted)")
 ax.set_ylabel("5th Nearest Neighbor Distance")
-ax.set_title("K-Distance Graph (for eps selection)")
+ax.set_title("K-Distance Graph — Sign-aligned")
 fig.savefig(FIGURES_DIR / "dbscan_kdistance.png", dpi=300, bbox_inches="tight")
+plt.close()
+print(f"  Saved: {FIGURES_DIR / 'dbscan_kdistance.png'}")
 
-# Look for the "elbow" in this plot — that's your eps
-# Then try a few values around that elbow:
-for eps_val in [0.5, 1.0, 1.5, 2.0]:
+for eps_val in [0.5, 1.0, 1.5, 2.0, 2.5]:
     db = DBSCAN(eps=eps_val, min_samples=5)
     labels = db.fit_predict(X_scaled)
     n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
     n_noise = (labels == -1).sum()
     print(f"    eps={eps_val}: {n_clusters} clusters, {n_noise} noise points")
 
-# ============================================
-# STEP 9: Pick best k and visualize
-# ============================================
-# Based on Steps 5-8, pick the k that has:
-#   - High silhouette score
-#   - Consistent across methods (k-means and GMM agree)
-#   - Supported by the dendrogram's natural breaks
-#   - DBSCAN finds similar number of clusters
 
+# ============================================
+# STEP 9: Visualization with best k
+# ============================================
 print("\n" + "="*60)
 print("  Step 9: Visualization with best k")
 print("="*60)
 
-# TODO: Set your chosen k based on the results above
-# BEST_K = # your choice here — look at the silhouette plots
+BEST_K = 2
+best_labels = kmeans_results[BEST_K]["labels"]
+print(f"  Chosen k={BEST_K}")
+print(f"  Cluster sizes: {pd.Series(best_labels).value_counts().sort_index().tolist()}")
 
-# TODO: Get the cluster labels from k-means at BEST_K
-# Hint: best_labels = kmeans_results[BEST_K]["labels"]
-# best_labels = # your code here
+# --- 9A: Heatmap sorted by cluster ---
+df_plot = effect_matrix_aligned.copy()
+df_plot["cluster"] = best_labels
+df_plot = df_plot.sort_values("cluster")
 
-# --- 9A: Heatmap of effect matrix sorted by cluster ---
-# This is the money figure. It shows how loci within each cluster
-# share similar cross-factor effect profiles.
-#
-# TODO:
-#   # Add cluster labels to the effect matrix
-#   df_plot = effect_matrix.copy()
-#   df_plot["cluster"] = best_labels
-#   df_plot = df_plot.sort_values("cluster")
-#
-#   # Create a heatmap of the scaled values, sorted by cluster
-#   # Use the UNSCALED effect_matrix values but sorted by cluster order
-#   sorted_index = df_plot.index
-#   X_sorted = X_scaled[effect_matrix.index.get_indexer(sorted_index)]
-#
-#   fig, ax = plt.subplots(figsize=(10, 14))
-#   sns.heatmap(
-#       pd.DataFrame(X_sorted, columns=FACTOR_KEYS.keys()),
-#       cmap="RdBu_r", center=0, ax=ax,
-#       yticklabels=False,  # too many loci to label individually
-#       cbar_kws={"label": "Standardized BETA"}
-#   )
-#   # Add horizontal lines between clusters
-#   cluster_sizes = df_plot["cluster"].value_counts().sort_index()
-#   cumulative = 0
-#   for size in cluster_sizes.values[:-1]:
-#       cumulative += size
-#       ax.axhline(y=cumulative, color="black", linewidth=2)
-#   ax.set_title(f"Cross-Factor Effect Profiles (k={BEST_K}, sorted by cluster)")
-#   ax.set_ylabel("Loci")
-#   fig.savefig(FIGURES_DIR / "heatmap_clustered.png", dpi=300, bbox_inches="tight")
+sorted_index = df_plot.index
+X_sorted = X_scaled[effect_matrix_aligned.index.get_indexer(sorted_index)]
 
-# your code here
+fig, ax = plt.subplots(figsize=(10, 14))
+sns.heatmap(
+    pd.DataFrame(X_sorted, columns=FACTOR_KEYS.keys()),
+    cmap="RdBu_r", center=0, ax=ax,
+    yticklabels=False,
+    cbar_kws={"label": "Standardized Z-score (sign-aligned)"}
+)
+cluster_sizes = df_plot["cluster"].value_counts().sort_index()
+cumulative = 0
+for size in cluster_sizes.values[:-1]:
+    cumulative += size
+    ax.axhline(y=cumulative, color="black", linewidth=2)
+ax.set_title(f"Cross-Factor Effect Profiles — Sign-aligned (k={BEST_K})")
+ax.set_ylabel("Loci")
+fig.savefig(FIGURES_DIR / "heatmap_clustered.png", dpi=300, bbox_inches="tight")
+plt.close()
+print(f"  Saved: {FIGURES_DIR / 'heatmap_clustered.png'}")
 
+# --- 9B: UMAP projection ---
+import umap
 
-# --- 9B: UMAP projection colored by cluster ---
-# UMAP reduces 5 dimensions to 2 for visualization.
-# Each point = one locus, colored by cluster assignment.
-#
-# TODO:
-#   import umap  # this is umap-learn from our conda env
-#
-#   reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
-#   embedding = reducer.fit_transform(X_scaled)
-#
-#   fig, ax = plt.subplots(figsize=(10, 8))
-#   scatter = ax.scatter(embedding[:, 0], embedding[:, 1],
-#                        c=best_labels, cmap="tab10", s=15, alpha=0.7)
-#   ax.set_xlabel("UMAP 1")
-#   ax.set_ylabel("UMAP 2")
-#   ax.set_title(f"UMAP Projection of Pleiotropic Loci (k={BEST_K})")
-#   plt.colorbar(scatter, label="Cluster")
-#   fig.savefig(FIGURES_DIR / "umap_clusters.png", dpi=300, bbox_inches="tight")
+reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
+embedding = reducer.fit_transform(X_scaled)
 
-# your code here
+fig, ax = plt.subplots(figsize=(10, 8))
+scatter = ax.scatter(embedding[:, 0], embedding[:, 1],
+                     c=best_labels, cmap="tab10", s=15, alpha=0.7)
+ax.set_xlabel("UMAP 1")
+ax.set_ylabel("UMAP 2")
+ax.set_title(f"UMAP Projection — Sign-aligned (k={BEST_K})")
+plt.colorbar(scatter, label="Cluster")
+fig.savefig(FIGURES_DIR / "umap_clusters.png", dpi=300, bbox_inches="tight")
+plt.close()
+print(f"  Saved: {FIGURES_DIR / 'umap_clusters.png'}")
 
+# --- 9C: Cluster profiles ---
+df_profiles = effect_matrix_aligned.copy()
+df_profiles["cluster"] = best_labels
+cluster_means = df_profiles.groupby("cluster").mean()
+print("\n  Cluster mean z-scores (sign-aligned):")
+print(cluster_means.round(4).to_string())
 
-# --- 9C: Cluster profile summary ---
-# For each cluster, show the mean BETA across factors.
-# This tells us what each cluster "looks like" biologically.
-#
-# TODO:
-#   df_profiles = effect_matrix.copy()
-#   df_profiles["cluster"] = best_labels
-#   cluster_means = df_profiles.groupby("cluster").mean()
-#   print("\n  Cluster mean BETAs:")
-#   print(cluster_means.round(4).to_string())
-#
-#   # Bar plot of cluster profiles
-#   fig, axes = plt.subplots(1, BEST_K, figsize=(4*BEST_K, 5), sharey=True)
-#   if BEST_K == 1:
-#       axes = [axes]
-#   for i, ax in enumerate(axes):
-#       means = cluster_means.loc[i]
-#       colors = ["red" if v < 0 else "steelblue" for v in means]
-#       ax.bar(means.index, means.values, color=colors)
-#       ax.set_title(f"Cluster {i} (n={sum(best_labels == i)})")
-#       ax.axhline(y=0, color="black", linewidth=0.5)
-#       ax.tick_params(axis="x", rotation=45)
-#   fig.suptitle("Mean Cross-Factor Effect Profiles by Cluster")
-#   fig.tight_layout()
-#   fig.savefig(FIGURES_DIR / "cluster_profiles.png", dpi=300, bbox_inches="tight")
+# Also show standard deviations to see within-cluster spread
+cluster_stds = df_profiles.groupby("cluster").std()
+print("\n  Cluster std z-scores:")
+print(cluster_stds.round(4).to_string())
 
-# your code here
+fig, axes = plt.subplots(1, BEST_K, figsize=(4*BEST_K, 5), sharey=True)
+if BEST_K == 1:
+    axes = [axes]
+for i, ax in enumerate(axes):
+    means = cluster_means.loc[i]
+    colors = ["red" if v < 0 else "steelblue" for v in means]
+    ax.bar(means.index, means.values, color=colors)
+    ax.set_title(f"Cluster {i} (n={sum(best_labels == i)})")
+    ax.axhline(y=0, color="black", linewidth=0.5)
+    ax.tick_params(axis="x", rotation=45)
+fig.suptitle("Mean Cross-Factor Z-score Profiles by Cluster (Sign-aligned)")
+fig.tight_layout()
+fig.savefig(FIGURES_DIR / "cluster_profiles.png", dpi=300, bbox_inches="tight")
+plt.close()
+print(f"  Saved: {FIGURES_DIR / 'cluster_profiles.png'}")
 
+print("\n" + "="*60)
+print("  Comparing k=2, k=3, k=4 cluster profiles")
+print("="*60)
+
+for k_val in [2, 3, 4]:
+    labels_k = kmeans_results[k_val]["labels"]
+    df_temp = effect_matrix_aligned.copy()
+    df_temp["cluster"] = labels_k
+    means = df_temp.groupby("cluster").mean()
+    sizes = df_temp.groupby("cluster").size()
+    print(f"\n  k={k_val} (silhouette={kmeans_results[k_val]['silhouette']:.4f}):")
+    for i in range(k_val):
+        profile = means.loc[i].round(2).to_dict()
+        print(f"    Cluster {i} (n={sizes[i]}): {profile}")
 
 # ============================================
 # STEP 10: Save results
@@ -414,125 +394,37 @@ print("\n" + "="*60)
 print("  Step 10: Saving results")
 print("="*60)
 
-# TODO: Save the effect matrix with cluster labels
-# Hint:
-#   df_output = effect_matrix.copy()
-#   df_output["cluster_kmeans"] = best_labels
-#   df_output["cluster_gmm"] = gmm_results[BEST_K]["labels"]
-#   df_output.to_csv(RESULTS_DIR / "effect_matrix_clustered.csv")
-#   print(f"  Saved: {RESULTS_DIR / 'effect_matrix_clustered.csv'}")
+df_output = effect_matrix_aligned.copy()
+df_output["cluster_kmeans"] = kmeans_results[BEST_K]["labels"]
+df_output["cluster_gmm"] = gmm_results[BEST_K]["labels"]
+df_output.to_csv(RESULTS_DIR / "effect_matrix_clustered.csv")
+print(f"  Saved: {RESULTS_DIR / 'effect_matrix_clustered.csv'}")
 
+with open(RESULTS_DIR / "clustering_summary.txt", "w") as f:
+    f.write("Phase 2: Clustering Analysis Summary (Sign-aligned)\n")
+    f.write("="*60 + "\n\n")
+    f.write(f"Sign-alignment reference: F4_Internalizing (flipped to positive)\n")
+    f.write(f"Hit loci: {len(hit_snps)} unique SNPs\n")
+    f.write(f"Effect matrix: {effect_matrix_aligned.shape}\n")
+    f.write(f"Chosen k: {BEST_K}\n\n")
+    f.write("K-Means Silhouette Scores:\n")
+    for k in k_range:
+        f.write(f"  k={k}: {kmeans_results[k]['silhouette']:.4f}\n")
+    f.write(f"\nGMM BIC Values:\n")
+    for k in k_range:
+        f.write(f"  k={k}: {gmm_results[k]['bic']:.1f}\n")
+    f.write(f"\nCluster sizes (k-means, k={BEST_K}):\n")
+    for i in range(BEST_K):
+        n = sum(kmeans_results[BEST_K]["labels"] == i)
+        f.write(f"  Cluster {i}: {n} loci\n")
+    f.write(f"\nCluster mean z-scores (sign-aligned):\n")
+    f.write(cluster_means.round(4).to_string())
+    f.write(f"\n\nCluster std z-scores:\n")
+    f.write(cluster_stds.round(4).to_string())
+print(f"  Saved: {RESULTS_DIR / 'clustering_summary.txt'}")
 
-# # --- 9A: Heatmap sorted by cluster ---
-# # The money figure. Distinct horizontal bands = real clusters.
-#
-# df_plot = effect_matrix.copy()
-# df_plot["cluster"] = best_labels
-# df_plot = df_plot.sort_values("cluster")
-#
-# sorted_index = df_plot.index
-# X_sorted = X_scaled[effect_matrix.index.get_indexer(sorted_index)]
-#
-# fig, ax = plt.subplots(figsize=(10, 14))
-# sns.heatmap(
-#     pd.DataFrame(X_sorted, columns=FACTOR_KEYS.keys()),
-#     cmap="RdBu_r", center=0, ax=ax,
-#     yticklabels=False,
-#     cbar_kws={"label": "Standardized BETA"}
-# )
-# cluster_sizes = df_plot["cluster"].value_counts().sort_index()
-# cumulative = 0
-# for size in cluster_sizes.values[:-1]:
-#     cumulative += size
-#     ax.axhline(y=cumulative, color="black", linewidth=2)
-# ax.set_title(f"Cross-Factor Effect Profiles (k={BEST_K}, sorted by cluster)")
-# ax.set_ylabel("Loci")
-# fig.savefig(FIGURES_DIR / "heatmap_clustered.png", dpi=300, bbox_inches="tight")
-# plt.close()
-# print(f"  Saved: {FIGURES_DIR / 'heatmap_clustered.png'}")
+print("\n  Phase 2 Complete")
 
-
-# # --- 9B: UMAP projection colored by cluster ---
-#
-# import umap
-#
-# reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
-# embedding = reducer.fit_transform(X_scaled)
-#
-# fig, ax = plt.subplots(figsize=(10, 8))
-# scatter = ax.scatter(embedding[:, 0], embedding[:, 1],
-#                      c=best_labels, cmap="tab10", s=15, alpha=0.7)
-# ax.set_xlabel("UMAP 1")
-# ax.set_ylabel("UMAP 2")
-# ax.set_title(f"UMAP Projection of Pleiotropic Loci (k={BEST_K})")
-# plt.colorbar(scatter, label="Cluster")
-# fig.savefig(FIGURES_DIR / "umap_clusters.png", dpi=300, bbox_inches="tight")
-# plt.close()
-# print(f"  Saved: {FIGURES_DIR / 'umap_clusters.png'}")
-
-
-# # --- 9C: Cluster profile bar charts ---
-# # Mean BETA per factor for each cluster — shows what each
-# # cluster "looks like" biologically.
-#
-# df_profiles = effect_matrix.copy()
-# df_profiles["cluster"] = best_labels
-# cluster_means = df_profiles.groupby("cluster").mean()
-# print("\n  Cluster mean BETAs:")
-# print(cluster_means.round(4).to_string())
-#
-# fig, axes = plt.subplots(1, BEST_K, figsize=(4*BEST_K, 5), sharey=True)
-# if BEST_K == 1:
-#     axes = [axes]
-# for i, ax in enumerate(axes):
-#     means = cluster_means.loc[i]
-#     colors = ["red" if v < 0 else "steelblue" for v in means]
-#     ax.bar(means.index, means.values, color=colors)
-#     ax.set_title(f"Cluster {i} (n={sum(best_labels == i)})")
-#     ax.axhline(y=0, color="black", linewidth=0.5)
-#     ax.tick_params(axis="x", rotation=45)
-# fig.suptitle("Mean Cross-Factor Effect Profiles by Cluster")
-# fig.tight_layout()
-# fig.savefig(FIGURES_DIR / "cluster_profiles.png", dpi=300, bbox_inches="tight")
-# plt.close()
-# print(f"  Saved: {FIGURES_DIR / 'cluster_profiles.png'}")
-
-
-# # ============================================
-# # STEP 10: Save results
-# # ============================================
-# print("\n" + "="*60)
-# print("  Step 10: Saving results")
-# print("="*60)
-#
-# df_output = effect_matrix.copy()
-# df_output["cluster_kmeans"] = kmeans_results[BEST_K]["labels"]
-# df_output["cluster_gmm"] = gmm_results[BEST_K]["labels"]
-# df_output.to_csv(RESULTS_DIR / "effect_matrix_clustered.csv")
-# print(f"  Saved: {RESULTS_DIR / 'effect_matrix_clustered.csv'}")
-#
-# # Save summary text
-# with open(RESULTS_DIR / "clustering_summary.txt", "w") as f:
-#     f.write("Phase 2: Clustering Analysis Summary\n")
-#     f.write("="*60 + "\n\n")
-#     f.write(f"Hit loci: {len(hit_snps)} unique SNPs\n")
-#     f.write(f"Effect matrix: {effect_matrix.shape}\n")
-#     f.write(f"Chosen k: {BEST_K}\n\n")
-#     f.write("K-Means Silhouette Scores:\n")
-#     for k in k_range:
-#         f.write(f"  k={k}: {kmeans_results[k]['silhouette']:.4f}\n")
-#     f.write(f"\nGMM BIC Values:\n")
-#     for k in k_range:
-#         f.write(f"  k={k}: {gmm_results[k]['bic']:.1f}\n")
-#     f.write(f"\nCluster sizes (k-means, k={BEST_K}):\n")
-#     for i in range(BEST_K):
-#         n = sum(kmeans_results[BEST_K]["labels"] == i)
-#         f.write(f"  Cluster {i}: {n} loci\n")
-#     f.write(f"\nCluster mean BETAs:\n")
-#     f.write(cluster_means.round(4).to_string())
-# print(f"  Saved: {RESULTS_DIR / 'clustering_summary.txt'}")
-#
-# print("\n  Phase 2: Clustering Analysis Complete")
 
 if __name__ == "__main__":
     teardown_output(output_path)

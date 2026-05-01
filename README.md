@@ -133,28 +133,29 @@ subgroup. The antagonistic pleiotropy cluster (C2) and psychotic-spectrum
 cluster (C1) remain stable across k = 3 and k = 4.
 
 ## Project structure
-psychiatric-gwas-pleiotropy/
-├── data/
-│   ├── raw/                      # PGC summary statistics (gitignored)
-│   │   ├── cross_disorder/
-│   │   │   ├── cdg2019/
-│   │   │   └── cdg2025/
-│   │   ├── replication/          # GWAS versions matching CDG2019
-│   │   └── latest/               # Most recent GWAS per disorder
-│   ├── processed/                # Harmonized and cleaned data
-│   └── results/                  # Analysis outputs
-├── notebooks/                    # Jupyter notebooks
-├── scripts/                      # Analysis scripts
-├── src/                          # Reusable Python modules
-│   ├── config.py
-│   ├── data_processing.py
-│   ├── clustering.py
-│   ├── enrichment.py
-│   └── visualization.py
-├── figures/
-├── environment.yml
-├── .gitignore
-└── README.md
+
+    psychiatric-gwas-pleiotropy/
+    ├── data/
+    │   ├── raw/                      # PGC summary statistics (gitignored)
+    │   │   ├── cross_disorder/
+    │   │   │   ├── cdg2019/
+    │   │   │   └── cdg2025/
+    │   │   ├── replication/          # GWAS versions matching CDG2019
+    │   │   └── latest/              # Most recent GWAS per disorder
+    │   ├── processed/                # Harmonized and cleaned data
+    │   └── results/                  # Analysis outputs
+    ├── notebooks/                    # Jupyter notebooks
+    ├── scripts/                      # Analysis scripts
+    ├── src/                          # Reusable Python modules
+    │   ├── config.py
+    │   ├── data_processing.py
+    │   ├── clustering.py
+    │   ├── enrichment.py
+    │   └── visualization.py
+    ├── figures/
+    ├── environment.yml
+    ├── .gitignore
+    └── README.md
 
 ## Reproducibility
 

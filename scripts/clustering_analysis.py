@@ -2,7 +2,7 @@
 Phase 2: Cross-Factor Effect Matrix & Clustering
 =================================================
 Build the locus x factor z-score matrix from CDG2025 data,
-then run hierarchical, k-means, GMM, and DBSCAN clustering.
+then run k-means (primary), hierarchical, GMM, and DBSCAN clustering.
 
 Approach: Sign-align all SNPs to positive F4 (Internalizing),
 preserving directional patterns across factors.
@@ -33,6 +33,9 @@ FIGURES_DIR = Path("figures")
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
+# Primary cluster count — change this single value to update all downstream outputs
+BEST_K = 3
+
 
 # ============================================
 # STEP 1: Load hits file and extract unique SNPs
@@ -47,7 +50,7 @@ print(f"  Columns: {df_hits.columns.tolist()}")
 
 hit_snps = df_hits["SNP"].unique()
 print(f"  Unique lead SNPs: {len(hit_snps)}")
-print(f"  Total rows (719) vs unique SNPs ({len(hit_snps)}) = {719 - len(hit_snps)} duplicated across factors")
+print(f"  Total rows ({len(df_hits)}) vs unique SNPs ({len(hit_snps)}) = {len(df_hits) - len(hit_snps)} duplicated across factors")
 
 
 # ============================================
@@ -149,10 +152,46 @@ print(f"  Column stds (should be ~1):  {X_scaled.std(axis=0).round(6)}")
 
 
 # ============================================
-# STEP 5: Hierarchical clustering
+# STEP 5: K-Means clustering (PRIMARY METHOD)
 # ============================================
 print("\n" + "="*60)
-print("  Step 5: Hierarchical clustering")
+print("  Step 5: K-Means clustering (primary method)")
+print("="*60)
+
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+
+k_range = range(2, 11)
+kmeans_results = {}
+
+for k in k_range:
+    km = KMeans(n_clusters=k, n_init=50, random_state=42)
+    labels = km.fit_predict(X_scaled)
+    sil = silhouette_score(X_scaled, labels)
+    kmeans_results[k] = {"model": km, "labels": labels, "silhouette": sil}
+    print(f"    k={k}: silhouette={sil:.4f}")
+
+fig, ax = plt.subplots(figsize=(8, 5))
+sil_scores = [kmeans_results[k]["silhouette"] for k in k_range]
+ax.plot(list(k_range), sil_scores, "bo-", linewidth=2, markersize=8)
+ax.set_xlabel("Number of clusters (k)")
+ax.set_ylabel("Silhouette Score")
+ax.set_title("K-Means: Silhouette Score vs k (Sign-aligned)")
+ax.set_xticks(list(k_range))
+best_sil_k = list(k_range)[np.argmax(sil_scores)]
+ax.axvline(x=best_sil_k, color="red", linestyle="--", alpha=0.5, label=f"Best k={best_sil_k}")
+ax.legend()
+fig.savefig(FIGURES_DIR / "kmeans_silhouette.png", dpi=300, bbox_inches="tight")
+plt.close()
+print(f"\n  Best silhouette k={best_sil_k} (score={max(sil_scores):.4f})")
+print(f"  Saved: {FIGURES_DIR / 'kmeans_silhouette.png'}")
+
+
+# ============================================
+# STEP 6: Hierarchical clustering (comparison method)
+# ============================================
+print("\n" + "="*60)
+print("  Step 6: Hierarchical clustering (comparison method)")
 print("="*60)
 
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
@@ -178,46 +217,10 @@ for n_clust in [2, 3, 4, 5, 6]:
 
 
 # ============================================
-# STEP 6: K-Means clustering
+# STEP 7: Gaussian Mixture Models (comparison method)
 # ============================================
 print("\n" + "="*60)
-print("  Step 6: K-Means clustering")
-print("="*60)
-
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-
-k_range = range(2, 11)
-kmeans_results = {}
-
-for k in k_range:
-    km = KMeans(n_clusters=k, n_init=50, random_state=42)
-    labels = km.fit_predict(X_scaled)
-    sil = silhouette_score(X_scaled, labels)
-    kmeans_results[k] = {"model": km, "labels": labels, "silhouette": sil}
-    print(f"    k={k}: silhouette={sil:.4f}")
-
-fig, ax = plt.subplots(figsize=(8, 5))
-sil_scores = [kmeans_results[k]["silhouette"] for k in k_range]
-ax.plot(list(k_range), sil_scores, "bo-", linewidth=2, markersize=8)
-ax.set_xlabel("Number of clusters (k)")
-ax.set_ylabel("Silhouette Score")
-ax.set_title("K-Means: Silhouette Score vs k — Sign-aligned")
-ax.set_xticks(list(k_range))
-best_sil_k = list(k_range)[np.argmax(sil_scores)]
-ax.axvline(x=best_sil_k, color="red", linestyle="--", alpha=0.5, label=f"Best k={best_sil_k}")
-ax.legend()
-fig.savefig(FIGURES_DIR / "kmeans_silhouette.png", dpi=300, bbox_inches="tight")
-plt.close()
-print(f"\n  Best silhouette k={best_sil_k} (score={max(sil_scores):.4f})")
-print(f"  Saved: {FIGURES_DIR / 'kmeans_silhouette.png'}")
-
-
-# ============================================
-# STEP 7: Gaussian Mixture Models
-# ============================================
-print("\n" + "="*60)
-print("  Step 7: Gaussian Mixture Models")
+print("  Step 7: Gaussian Mixture Models (comparison method)")
 print("="*60)
 
 from sklearn.mixture import GaussianMixture
@@ -239,14 +242,14 @@ bics = [gmm_results[k]["bic"] for k in k_range]
 ax1.plot(list(k_range), bics, "go-", linewidth=2, markersize=8)
 ax1.set_xlabel("Number of components (k)")
 ax1.set_ylabel("BIC (lower = better)")
-ax1.set_title("GMM: BIC vs k — Sign-aligned")
+ax1.set_title("GMM: BIC vs k (Sign-aligned)")
 ax1.set_xticks(list(k_range))
 
 gmm_sils = [gmm_results[k]["silhouette"] for k in k_range]
 ax2.plot(list(k_range), gmm_sils, "ro-", linewidth=2, markersize=8)
 ax2.set_xlabel("Number of components (k)")
 ax2.set_ylabel("Silhouette Score")
-ax2.set_title("GMM: Silhouette vs k — Sign-aligned")
+ax2.set_title("GMM: Silhouette vs k (Sign-aligned)")
 ax2.set_xticks(list(k_range))
 
 fig.tight_layout()
@@ -258,10 +261,10 @@ print(f"  Saved: {FIGURES_DIR / 'gmm_bic_silhouette.png'}")
 
 
 # ============================================
-# STEP 8: DBSCAN
+# STEP 8: DBSCAN (comparison method)
 # ============================================
 print("\n" + "="*60)
-print("  Step 8: DBSCAN")
+print("  Step 8: DBSCAN (comparison method)")
 print("="*60)
 
 from sklearn.cluster import DBSCAN
@@ -276,7 +279,7 @@ fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(k_distances)
 ax.set_xlabel("Points (sorted)")
 ax.set_ylabel("5th Nearest Neighbor Distance")
-ax.set_title("K-Distance Graph — Sign-aligned")
+ax.set_title("K-Distance Graph (Sign-aligned)")
 fig.savefig(FIGURES_DIR / "dbscan_kdistance.png", dpi=300, bbox_inches="tight")
 plt.close()
 print(f"  Saved: {FIGURES_DIR / 'dbscan_kdistance.png'}")
@@ -290,15 +293,15 @@ for eps_val in [0.5, 1.0, 1.5, 2.0, 2.5]:
 
 
 # ============================================
-# STEP 9: Visualization with best k
+# STEP 9: Visualization with primary k
 # ============================================
 print("\n" + "="*60)
-print("  Step 9: Visualization with best k")
+print(f"  Step 9: Visualization (k-means, k={BEST_K})")
 print("="*60)
 
-BEST_K = 2
 best_labels = kmeans_results[BEST_K]["labels"]
-print(f"  Chosen k={BEST_K}")
+print(f"  Primary method: K-Means, k={BEST_K}")
+print(f"  Silhouette score: {kmeans_results[BEST_K]['silhouette']:.4f}")
 print(f"  Cluster sizes: {pd.Series(best_labels).value_counts().sort_index().tolist()}")
 
 # --- 9A: Heatmap sorted by cluster ---
@@ -321,7 +324,7 @@ cumulative = 0
 for size in cluster_sizes.values[:-1]:
     cumulative += size
     ax.axhline(y=cumulative, color="black", linewidth=2)
-ax.set_title(f"Cross-Factor Effect Profiles — Sign-aligned (k={BEST_K})")
+ax.set_title(f"Cross-Factor Effect Profiles — Sign-aligned (K-Means, k={BEST_K})")
 ax.set_ylabel("Loci")
 fig.savefig(FIGURES_DIR / "heatmap_clustered.png", dpi=300, bbox_inches="tight")
 plt.close()
@@ -338,7 +341,7 @@ scatter = ax.scatter(embedding[:, 0], embedding[:, 1],
                      c=best_labels, cmap="tab10", s=15, alpha=0.7)
 ax.set_xlabel("UMAP 1")
 ax.set_ylabel("UMAP 2")
-ax.set_title(f"UMAP Projection — Sign-aligned (k={BEST_K})")
+ax.set_title(f"UMAP Projection — Sign-aligned (K-Means, k={BEST_K})")
 plt.colorbar(scatter, label="Cluster")
 fig.savefig(FIGURES_DIR / "umap_clusters.png", dpi=300, bbox_inches="tight")
 plt.close()
@@ -348,12 +351,11 @@ print(f"  Saved: {FIGURES_DIR / 'umap_clusters.png'}")
 df_profiles = effect_matrix_aligned.copy()
 df_profiles["cluster"] = best_labels
 cluster_means = df_profiles.groupby("cluster").mean()
-print("\n  Cluster mean z-scores (sign-aligned):")
+print(f"\n  Cluster mean z-scores (sign-aligned, k-means k={BEST_K}):")
 print(cluster_means.round(4).to_string())
 
-# Also show standard deviations to see within-cluster spread
 cluster_stds = df_profiles.groupby("cluster").std()
-print("\n  Cluster std z-scores:")
+print(f"\n  Cluster std z-scores:")
 print(cluster_stds.round(4).to_string())
 
 fig, axes = plt.subplots(1, BEST_K, figsize=(4*BEST_K, 5), sharey=True)
@@ -366,64 +368,98 @@ for i, ax in enumerate(axes):
     ax.set_title(f"Cluster {i} (n={sum(best_labels == i)})")
     ax.axhline(y=0, color="black", linewidth=0.5)
     ax.tick_params(axis="x", rotation=45)
-fig.suptitle("Mean Cross-Factor Z-score Profiles by Cluster (Sign-aligned)")
+fig.suptitle(f"Mean Cross-Factor Z-score Profiles by Cluster (K-Means, k={BEST_K})")
 fig.tight_layout()
 fig.savefig(FIGURES_DIR / "cluster_profiles.png", dpi=300, bbox_inches="tight")
 plt.close()
 print(f"  Saved: {FIGURES_DIR / 'cluster_profiles.png'}")
 
+
+# ============================================
+# STEP 10: Cross-method comparison at k=BEST_K
+# ============================================
 print("\n" + "="*60)
-print("  Comparing k=2, k=3, k=4 cluster profiles")
+print(f"  Step 10: Cross-method comparison")
 print("="*60)
 
+# K-Means across k values
+print("\n  K-Means cluster profiles across k=2, 3, 4:")
 for k_val in [2, 3, 4]:
     labels_k = kmeans_results[k_val]["labels"]
     df_temp = effect_matrix_aligned.copy()
     df_temp["cluster"] = labels_k
     means = df_temp.groupby("cluster").mean()
     sizes = df_temp.groupby("cluster").size()
-    print(f"\n  k={k_val} (silhouette={kmeans_results[k_val]['silhouette']:.4f}):")
+    print(f"\n    k={k_val} (silhouette={kmeans_results[k_val]['silhouette']:.4f}):")
     for i in range(k_val):
         profile = means.loc[i].round(2).to_dict()
-        print(f"    Cluster {i} (n={sizes[i]}): {profile}")
+        print(f"      Cluster {i} (n={sizes[i]}): {profile}")
+
+# Hierarchical at k=BEST_K for comparison
+print(f"\n  Hierarchical (Ward) cluster profiles at k={BEST_K}:")
+labels_hier = fcluster(Z_linkage, BEST_K, criterion="maxclust")
+# Convert to 0-indexed for consistency
+labels_hier = labels_hier - 1
+df_temp = effect_matrix_aligned.copy()
+df_temp["cluster"] = labels_hier
+means_hier = df_temp.groupby("cluster").mean()
+sizes_hier = df_temp.groupby("cluster").size()
+for i in range(BEST_K):
+    profile = means_hier.loc[i].round(2).to_dict()
+    print(f"    Cluster {i} (n={sizes_hier[i]}): {profile}")
+
+# GMM at k=BEST_K for comparison
+print(f"\n  GMM cluster profiles at k={BEST_K}:")
+labels_gmm = gmm_results[BEST_K]["labels"]
+df_temp = effect_matrix_aligned.copy()
+df_temp["cluster"] = labels_gmm
+means_gmm = df_temp.groupby("cluster").mean()
+sizes_gmm = df_temp.groupby("cluster").size()
+for i in range(BEST_K):
+    profile = means_gmm.loc[i].round(2).to_dict()
+    print(f"    Cluster {i} (n={sizes_gmm[i]}): {profile}")
+
 
 # ============================================
-# STEP 10: Save results
+# STEP 11: Save results
 # ============================================
 print("\n" + "="*60)
-print("  Step 10: Saving results")
+print("  Step 11: Saving results")
 print("="*60)
 
 df_output = effect_matrix_aligned.copy()
-df_output["cluster_kmeans"] = kmeans_results[BEST_K]["labels"]
-df_output["cluster_gmm"] = gmm_results[BEST_K]["labels"]
+df_output[f"cluster_kmeans_k{BEST_K}"] = kmeans_results[BEST_K]["labels"]
+df_output[f"cluster_hier_k{BEST_K}"] = labels_hier
+df_output[f"cluster_gmm_k{BEST_K}"] = gmm_results[BEST_K]["labels"]
 df_output.to_csv(RESULTS_DIR / "effect_matrix_clustered.csv")
 print(f"  Saved: {RESULTS_DIR / 'effect_matrix_clustered.csv'}")
 
 with open(RESULTS_DIR / "clustering_summary.txt", "w") as f:
-    f.write("Phase 2: Clustering Analysis Summary (Sign-aligned)\n")
+    f.write(f"Phase 2: Clustering Analysis Summary (Sign-aligned)\n")
     f.write("="*60 + "\n\n")
     f.write(f"Sign-alignment reference: F4_Internalizing (flipped to positive)\n")
     f.write(f"Hit loci: {len(hit_snps)} unique SNPs\n")
     f.write(f"Effect matrix: {effect_matrix_aligned.shape}\n")
-    f.write(f"Chosen k: {BEST_K}\n\n")
+    f.write(f"Primary method: K-Means\n")
+    f.write(f"Primary k: {BEST_K}\n\n")
     f.write("K-Means Silhouette Scores:\n")
     for k in k_range:
-        f.write(f"  k={k}: {kmeans_results[k]['silhouette']:.4f}\n")
+        marker = " <-- primary" if k == BEST_K else ""
+        f.write(f"  k={k}: {kmeans_results[k]['silhouette']:.4f}{marker}\n")
     f.write(f"\nGMM BIC Values:\n")
     for k in k_range:
         f.write(f"  k={k}: {gmm_results[k]['bic']:.1f}\n")
-    f.write(f"\nCluster sizes (k-means, k={BEST_K}):\n")
+    f.write(f"\nPrimary cluster sizes (k-means, k={BEST_K}):\n")
     for i in range(BEST_K):
         n = sum(kmeans_results[BEST_K]["labels"] == i)
         f.write(f"  Cluster {i}: {n} loci\n")
-    f.write(f"\nCluster mean z-scores (sign-aligned):\n")
+    f.write(f"\nCluster mean z-scores (sign-aligned, k-means k={BEST_K}):\n")
     f.write(cluster_means.round(4).to_string())
     f.write(f"\n\nCluster std z-scores:\n")
     f.write(cluster_stds.round(4).to_string())
 print(f"  Saved: {RESULTS_DIR / 'clustering_summary.txt'}")
 
-print("\n  Phase 2 Complete")
+print(f"\n  Phase 2 Complete (primary: k-means, k={BEST_K})")
 
 
 if __name__ == "__main__":

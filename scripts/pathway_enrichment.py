@@ -1,5 +1,5 @@
 """
-Phase 2C: Pathway Enrichment Analysis
+Pathway Enrichment Analysis
 ======================================
 For each cluster, map lead SNPs to nearest genes,
 then run GO and pathway enrichment using g:Profiler.
@@ -30,7 +30,7 @@ FIGURES_DIR = Path("figures")
 
 
 # ============================================
-# STEP 1: Load annotated data and factor files
+# 1. Load annotated data and factor files
 # ============================================
 print("="*60)
 print("  Step 1: Loading data")
@@ -63,7 +63,7 @@ for i in range(3):
 
 
 # ============================================
-# STEP 2: Map SNPs to genes using factor file positions
+# 2. Map SNPs to genes using factor file positions
 # ============================================
 print("\n" + "="*60)
 print("  Step 2: Getting SNP positions")
@@ -76,18 +76,16 @@ del df_factor
 
 print(f"  SNP positions retrieved: {len(snp_positions)}")
 
-# We'll use the SNP rsIDs directly with g:Profiler — it can accept
-# rsIDs and map them to nearby genes internally. But g:Profiler
-# works best with gene names/Ensembl IDs, so we'll use its SNP
-# query feature.
+# Use the SNP rsIDs directly with g:Profiler 
+# Accepts rsIDs and maps them to nearby genes internally.
 
-# First, let's try querying g:Profiler with rsIDs directly
+# Try querying g:Profiler with rsIDs directly
 # g:Profiler's convert function can map SNPs to genes
 print("\n  Testing g:Profiler SNP to gene mapping...")
 
 gp = GProfiler(return_dataframe=True)
 
-# Test with a small batch first
+# Test with a small batch
 test_snps = hit_snps[:10].tolist()
 try:
     test_convert = gp.convert(
@@ -104,10 +102,10 @@ except Exception as e:
     print(f"  g:Profiler convert failed: {e}")
     print(f"  Will query with rsIDs directly in enrichment")
     snp_to_gene_method = "direct"
-
+# Confimed working
 
 # ============================================
-# STEP 3: Map all SNPs to genes
+# 3. Map all SNPs to genes
 # ============================================
 print("\n" + "="*60)
 print("  Step 3: Mapping all SNPs to genes")
@@ -133,7 +131,7 @@ if snp_to_gene_method == "convert":
 
     # Build SNP -> gene mapping
     # The 'incoming' column may have the original rsID or a positional format
-    # We need to map back to our original rsIDs
+    # Need to map back to original rsIDs
     # g:Profiler returns results in the same order as the query
     snp_to_genes = {}
     for _, row in valid.iterrows():
@@ -142,13 +140,13 @@ if snp_to_gene_method == "convert":
         incoming = row["incoming"]
         gene = row["converted"]
 
-        # Check if incoming is one of our rsIDs directly
+        # Check if incoming is one of the rsIDs directly
         if incoming in hit_snps:
             if incoming not in snp_to_genes:
                 snp_to_genes[incoming] = []
             snp_to_genes[incoming].append(gene)
         else:
-            # g:Profiler may have converted rsID to position format
+            # g:Profiler may convert rsID to position format
             # Use the n_incoming index to map back
             idx = int(row["n_incoming"]) - 1  # 1-indexed to 0-indexed
             if idx < len(hit_snps):
@@ -193,7 +191,7 @@ for cluster_id in range(3):
 
 
 # ============================================
-# STEP 4: Run enrichment analysis per cluster
+# 4. Run enrichment analysis per cluster
 # ============================================
 print("\n" + "="*60)
 print("  Step 4: Running pathway enrichment per cluster")
@@ -260,7 +258,7 @@ for cluster_id in range(3):
 
 
 # ============================================
-# STEP 5: Compare enrichment across clusters
+# 5. Compare enrichment across clusters
 # ============================================
 print("\n" + "="*60)
 print("  Step 5: Cross-cluster enrichment comparison")
@@ -305,7 +303,7 @@ if len(all_terms) >= 2:
 
 
 # ============================================
-# STEP 6: Visualization
+# 6. Visualization
 # ============================================
 print("\n" + "="*60)
 print("  Step 6: Enrichment visualization")
@@ -340,7 +338,7 @@ print(f"  Saved: {FIGURES_DIR / 'pathway_enrichment_by_cluster.png'}")
 
 
 # ============================================
-# STEP 7: Save results
+# 7. Save results
 # ============================================
 print("\n" + "="*60)
 print("  Step 7: Saving enrichment results")

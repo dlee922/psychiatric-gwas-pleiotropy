@@ -1,5 +1,5 @@
 """
-Phase 1: Data Exploration
+Data Exploration
 =========================
 Run a standardized exploration across all datasets.
 
@@ -16,7 +16,7 @@ matplotlib.use("Agg")
 
 from src.config import CROSS_DISORDER, REPLICATION, LATEST
 from src.data_utils import (
-    explore_dataset, load_sumstats, identify_columns,
+    load_sumstats, identify_columns,
     load_cdg2019, gwas_summary, quick_look
 )
 
@@ -27,6 +27,7 @@ print("="*60)
 print("  1. CDG2019: 8-Disorder Cross-Disorder Meta-Analysis")
 print("="*60)
 
+# Make sure to use config for dataset paths
 df_cdg = load_cdg2019(CROSS_DISORDER["cdg2019"]["path"])
 col_map_cdg = identify_columns(df_cdg)
 gwas_summary(df_cdg, col_map_cdg, name="cdg2019")
@@ -143,12 +144,12 @@ print("""
   CDG2025:
     - Hits file contains significant pleiotropic loci for clustering
     - Factor files (F1-F5 + PFactor) contain Genomic SEM results
-    - These are the primary data for our novel ML analysis
+    - These are the primary datasets for this projects ML clustering analysis
 
   Next Steps:
-    - Use individual disorder GWAS files for LDSC genetic correlations
     - Use CDG2025 hits file for locus-level clustering analysis
     - Harmonize column names across all files before pipeline begins
+    - Use individual disorder GWAS files for LDSC genetic correlations
 """)
 
 print("\n  Hits per factor:")
@@ -160,4 +161,4 @@ for factor in sorted(df_hits["gwas_name"].unique()):
 
 if __name__ == "__main__":
     teardown_output(output_path)
-    print("Phase 1: Data Exploration Complete")
+    print("Data Exploration Complete")

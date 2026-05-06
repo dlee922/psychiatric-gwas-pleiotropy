@@ -1,7 +1,7 @@
 """
-Phase 2: Cross-Factor Effect Matrix & Clustering
-=================================================
-Build the locus x factor z-score matrix from CDG2025 data,
+Cross-Factor Effect Matrix & Clustering
+=======================================
+Build the locus 5 factor z-score matrix from CDG2025 data,
 then run k-means (primary), hierarchical, GMM, and DBSCAN clustering.
 
 Approach: Sign-align all SNPs to positive F4 (Internalizing),
@@ -33,12 +33,11 @@ FIGURES_DIR = Path("figures")
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-# Primary cluster count — change this single value to update all downstream outputs
+# Primary cluster count - change to update all downstream outputs
 BEST_K = 3
 
-
 # ============================================
-# STEP 1: Load hits file and extract unique SNPs
+# 1. Load hits file and extract unique SNPs
 # ============================================
 print("="*60)
 print("  Step 1: Loading hits file")
@@ -54,7 +53,7 @@ print(f"  Total rows ({len(df_hits)}) vs unique SNPs ({len(hit_snps)}) = {len(df
 
 
 # ============================================
-# STEP 2: Build cross-factor effect matrix
+# 2. Build cross-factor effect matrix
 # ============================================
 print("\n" + "="*60)
 print("  Step 2: Building cross-factor z-score matrix")
@@ -86,27 +85,32 @@ print(f"  Expected: ({len(hit_snps)}, 5)")
 print(f"  Missing values per column:\n{effect_matrix.isnull().sum()}")
 
 # Sign-alignment: flip each SNP so F4_Internalizing is always positive.
-# This removes the arbitrary allele direction while preserving the
+# This removes the arbitrary allele direction while preservi   ng the
 # relative pattern of effects across factors.
-sign = np.sign(effect_matrix["F4_Internalizing"])
+sign = np.sign(effect_matrix["F4_Internalizing"]) # Returns a series of 1's and -1's
 # Handle any exact zeros (unlikely but safe)
 sign = sign.replace(0, 1)
+
+# axis=0 -> each row gets multiplied by its own sign scalar
 effect_matrix_aligned = effect_matrix.multiply(sign, axis=0)
 
 n_flipped = (sign == -1).sum()
+
+# Check how many SNPs were flipped and what percentage
+# Make sure F4 is now all positive
 print(f"\n  Sign-alignment to F4_Internalizing:")
 print(f"    SNPs flipped: {n_flipped} / {len(effect_matrix)} ({n_flipped/len(effect_matrix)*100:.1f}%)")
 print(f"    F4 now all positive: {(effect_matrix_aligned['F4_Internalizing'] >= 0).all()}")
 
 # Verification
-sample_snp = effect_matrix_aligned.index[0]
+sample_snp = effect_matrix_aligned.index[123] # Using random index. Index 1 was already all positive
 print(f"\n  Verification — {sample_snp}:")
 print(f"    Raw z-scores:     {effect_matrix.loc[sample_snp].round(4).to_dict()}")
 print(f"    Aligned z-scores: {effect_matrix_aligned.loc[sample_snp].round(4).to_dict()}")
 
 
 # ============================================
-# STEP 3: Quick sanity checks
+# 3. Quick sanity checks
 # ============================================
 print("\n" + "="*60)
 print("  Step 3: Effect matrix sanity checks (sign-aligned)")
@@ -133,9 +137,47 @@ fig.savefig(FIGURES_DIR / "factor_correlation_comparison.png", dpi=300, bbox_inc
 plt.close()
 print(f"\n  Saved: {FIGURES_DIR / 'factor_correlation_comparison.png'}")
 
+# ============================================
+# 3B. PFactor collinearity check (figure only)
+# ============================================
+
+# Including this just to show collinearity between F4 and PFactor
+print("\n" + "="*60)
+print("  Step 3B: PFactor collinearity check (not used in clustering)")
+print("="*60)
+
+df_pfactor = load_sumstats(CROSS_DISORDER["cdg2025_pfactor"]["path"])
+filtered_pf = df_pfactor[df_pfactor["SNP"].isin(hit_snps)]
+pf_zscores = filtered_pf.set_index("SNP").eval("BETA / SE")
+print(f"  PFactor: found {len(filtered_pf)} / {len(hit_snps)} hit SNPs")
+
+# Build 6-factor matrix (sign-aligned) just for correlation
+effect_matrix_with_pf = effect_matrix_aligned.copy()
+effect_matrix_with_pf["PFactor"] = pf_zscores * sign  # apply same sign-alignment
+
+corr_with_pf = effect_matrix_with_pf.corr()
+print("\n  6-factor correlation matrix (sign-aligned):")
+print(corr_with_pf.round(4).to_string())
+
+# Highlight the PFactor row
+print(f"\n  PFactor correlations:")
+for col in FACTOR_KEYS.keys():
+    print(f"    PFactor <-> {col}: {corr_with_pf.loc['PFactor', col]:.4f}")
+
+fig, ax = plt.subplots(figsize=(9, 7))
+sns.heatmap(corr_with_pf, annot=True, fmt=".3f",
+            cmap="RdBu_r", center=0, ax=ax, vmin=-1, vmax=1)
+ax.set_title("Factor Correlations Including PFactor (Sign-aligned)\nPFactor excluded from clustering due to collinearity")
+fig.tight_layout()
+fig.savefig(FIGURES_DIR / "pfactor_collinearity.png", dpi=300, bbox_inches="tight")
+plt.close()
+print(f"\n  Saved: {FIGURES_DIR / 'pfactor_collinearity.png'}")
+
+del df_pfactor, filtered_pf, pf_zscores, effect_matrix_with_pf
+gc.collect()
 
 # ============================================
-# STEP 4: Standardize
+# 4. Standardize
 # ============================================
 print("\n" + "="*60)
 print("  Step 4: Standardization")
@@ -152,7 +194,7 @@ print(f"  Column stds (should be ~1):  {X_scaled.std(axis=0).round(6)}")
 
 
 # ============================================
-# STEP 5: K-Means clustering (PRIMARY METHOD)
+# 5. K-Means clustering (PRIMARY METHOD)
 # ============================================
 print("\n" + "="*60)
 print("  Step 5: K-Means clustering (primary method)")
@@ -188,7 +230,7 @@ print(f"  Saved: {FIGURES_DIR / 'kmeans_silhouette.png'}")
 
 
 # ============================================
-# STEP 6: Hierarchical clustering (comparison method)
+# 6. Hierarchical clustering (comparison method)
 # ============================================
 print("\n" + "="*60)
 print("  Step 6: Hierarchical clustering (comparison method)")
@@ -217,7 +259,7 @@ for n_clust in [2, 3, 4, 5, 6]:
 
 
 # ============================================
-# STEP 7: Gaussian Mixture Models (comparison method)
+# 7. Gaussian Mixture Models (comparison method)
 # ============================================
 print("\n" + "="*60)
 print("  Step 7: Gaussian Mixture Models (comparison method)")
@@ -237,13 +279,21 @@ for k in k_range:
                        "bic": bic, "silhouette": sil}
     print(f"    k={k}: BIC={bic:.1f}, silhouette={sil:.4f}")
 
+# Comparing BIC and Silhouette Scores here
+# Minimizing BIC
+# Derivation: 
+# first term -> -2 * ln(L) -> want to minimize the first term meaning we have a large L
+# second term -> k * ln(n) -> minimizing parameters
+# finding the balance between penalty and likelihood
+
+
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 bics = [gmm_results[k]["bic"] for k in k_range]
 ax1.plot(list(k_range), bics, "go-", linewidth=2, markersize=8)
 ax1.set_xlabel("Number of components (k)")
 ax1.set_ylabel("BIC (lower = better)")
 ax1.set_title("GMM: BIC vs k (Sign-aligned)")
-ax1.set_xticks(list(k_range))
+ax1.set_xticks(list(k_range)) 
 
 gmm_sils = [gmm_results[k]["silhouette"] for k in k_range]
 ax2.plot(list(k_range), gmm_sils, "ro-", linewidth=2, markersize=8)
@@ -261,7 +311,7 @@ print(f"  Saved: {FIGURES_DIR / 'gmm_bic_silhouette.png'}")
 
 
 # ============================================
-# STEP 8: DBSCAN (comparison method)
+# 8. DBSCAN (comparison method)
 # ============================================
 print("\n" + "="*60)
 print("  Step 8: DBSCAN (comparison method)")
@@ -293,7 +343,7 @@ for eps_val in [0.5, 1.0, 1.5, 2.0, 2.5]:
 
 
 # ============================================
-# STEP 9: Visualization with primary k
+# 9. Visualization with primary k
 # ============================================
 print("\n" + "="*60)
 print(f"  Step 9: Visualization (k-means, k={BEST_K})")
@@ -331,6 +381,9 @@ plt.close()
 print(f"  Saved: {FIGURES_DIR / 'heatmap_clustered.png'}")
 
 # --- 9B: UMAP projection ---
+# For visualizing the clusters from 5D to a 2D space
+# Be careful not to overinterpret this figure
+# Just a visual representation of how well the clusters separated from 5D to 2D
 import umap
 
 reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
@@ -376,7 +429,7 @@ print(f"  Saved: {FIGURES_DIR / 'cluster_profiles.png'}")
 
 
 # ============================================
-# STEP 10: Cross-method comparison at k=BEST_K
+# 10. Cross-method comparison at k=BEST_K
 # ============================================
 print("\n" + "="*60)
 print(f"  Step 10: Cross-method comparison")
@@ -421,7 +474,7 @@ for i in range(BEST_K):
 
 
 # ============================================
-# STEP 11: Save results
+# 11. Save results
 # ============================================
 print("\n" + "="*60)
 print("  Step 11: Saving results")

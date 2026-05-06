@@ -1,5 +1,5 @@
 """
-Phase 2B: Q_P Annotation of Clusters
+Q_P Annotation of Clusters
 =====================================
 Annotate the k=3 sign-aligned clusters with QSNP heterogeneity
 values from the factor files, and test whether _Q hits from the
@@ -32,7 +32,7 @@ FIGURES_DIR = Path("figures")
 
 
 # ============================================
-# STEP 1: Load the clustered effect matrix
+# 1. Load the clustered effect matrix
 # ============================================
 print("="*60)
 print("  Step 1: Loading clustered effect matrix")
@@ -67,7 +67,7 @@ for i in range(3):
 
 
 # ============================================
-# STEP 2: Extract Q_P values for hit SNPs
+# 2. Extract Q_P values for hit SNPs
 # ============================================
 print("\n" + "="*60)
 print("  Step 2: Extracting Q_P values from factor files")
@@ -103,7 +103,7 @@ print(f"\n  Annotated matrix shape: {df_annotated.shape}")
 
 
 # ============================================
-# STEP 3: Q_P distribution by cluster
+# 3. Q_P distribution by cluster
 # ============================================
 print("\n" + "="*60)
 print("  Step 3: Q_P values by cluster")
@@ -159,7 +159,7 @@ print(f"  Saved: {FIGURES_DIR / 'qp_boxplots_by_cluster.png'}")
 
 
 # ============================================
-# STEP 4: Statistical tests
+# 4. Statistical tests
 # ============================================
 print("\n" + "="*60)
 print("  Step 4: Statistical tests — Q_P differences across clusters")
@@ -176,7 +176,7 @@ for qp_col in qp_cols:
 
 
 # ============================================
-# STEP 5: Cross-reference with hits file factor labels
+# 5. Cross-reference with hits file factor labels
 # ============================================
 print("\n" + "="*60)
 print("  Step 5: Hits file factor labels vs clusters")
@@ -231,7 +231,7 @@ for factor_q in ["F1_Q", "F2_Q", "F3_Q", "F4_Q", "F5_Q", "Hier_Q"]:
 
 
 # ============================================
-# STEP 6: Factor-specific hit labels by cluster
+# 6. Factor-specific hit labels by cluster
 # ============================================
 print("\n" + "="*60)
 print("  Step 6: Which factors' hits populate each cluster?")
@@ -247,7 +247,7 @@ for factor_label in ["F1", "F2", "F3", "F4", "F5", "Hier"]:
 
 
 # ============================================
-# STEP 7: Save annotated results
+# 7. Save annotated results
 # ============================================
 print("\n" + "="*60)
 print("  Step 7: Saving annotated results")

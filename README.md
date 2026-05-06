@@ -44,24 +44,27 @@ to ensure consistent allele harmonization.
 
 ### Clustering
 
-Hierarchical clustering (Ward linkage, Euclidean distance) was the primary
-analysis. The number of clusters was selected by evaluating k = 2 through 10
-using silhouette scores and bootstrap stability (1,000 iterations). Three
-comparison methods were run at matched k values: k-means, Gaussian mixture
-models (evaluated by BIC and silhouette), and DBSCAN as a density-based
-sanity check.
+K-means clustering (50 random initializations, Euclidean distance) was the
+primary analysis. The number of clusters was selected by evaluating k = 2
+through 10 using silhouette scores. Three comparison methods were run at
+matched k values to assess robustness: hierarchical agglomerative clustering
+(Ward linkage), Gaussian mixture models (evaluated by BIC and silhouette),
+and DBSCAN as a density-based sanity check. All three comparison methods
+recovered qualitatively similar cluster profiles at k = 3.
 
 k = 3 was selected as the primary solution (silhouette = 0.256, nearly tied
-with k = 2 at 0.254). k = 4 was examined as a secondary solution to assess
-whether additional structure was present.
+with k = 2 at 0.254) based on biological interpretability, as k = 3 revealed
+a distinct antagonistic pleiotropy cluster not visible at k = 2. k = 4 was
+examined as a secondary solution to assess whether additional structure was
+present.
 
 ### Validation
 
 Clusters were validated using Q_P heterogeneity statistics from the Genomic SEM
-output. Q_P quantifies the degree to which a locus deviates from the factor
-model's predicted effect pattern. So, higher Q_P indicates greater heterogeneity
-relative to the latent factor structure. Q_P values were used for post-hoc
-cluster annotation, not as clustering features.
+output. Q_P functions as a p-value for a heterogeneity test, where lower Q_P
+indicates greater deviation from the factor model's predicted effect pattern,
+with Q_P < 0.05 indicating statistically significant heterogeneity. Q_P values
+were used for post-hoc cluster annotation, not as clustering features.
 
 Additionally, loci flagged as significant Q hits (QSNP p < 5e-8) in the original
 CDG2025 results were tested for enrichment across clusters.

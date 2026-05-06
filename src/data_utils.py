@@ -11,7 +11,7 @@ from pathlib import Path
 def detect_separator(filepath, n_lines=5):
     """
     Detect whether a file is tab-separated, whitespace-separated, or comma-separated
-    by reading the first few lines. Handles VCF-format files with ## headers.
+    by reading the first few lines. Handles VCF-format files with ## headers as well.
     """
     filepath = Path(filepath)
 
@@ -33,7 +33,6 @@ def detect_separator(filepath, n_lines=5):
     elif "," in header:
         return ","
     else:
-        return r"\s+"
         # Whitespace-separated
         return r"\s+"
 
@@ -62,7 +61,7 @@ def load_sumstats(filepath, nrows=None, usecols=None, verbose=True):
             else:
                 break
 
-    if verbose:
+    if verbose: # Defaulted to true
         print(f"Loading: {filepath.name}")
         print(f"  Separator: {'tab' if sep == chr(9) else 'whitespace' if sep == r's+' else sep}")
         print(f"  Compression: {compression}")
@@ -224,10 +223,6 @@ def gwas_summary(df, col_map, name="dataset"):
     print(f"{'='*60}")
     print(f"  Total SNPs: {len(df):,}")
 
-    # if "chr" in col_map:
-    #     chroms = df[col_map['chr']].dropna().unique()
-    #     print(f"  Chromosomes: {sorted(chroms, key=str)}")
-
     if "p" in col_map:
         p = df[col_map["p"]]
         print(f"  P-value range: [{p.min():.2e}, {p.max():.2e}]")
@@ -251,6 +246,8 @@ def gwas_summary(df, col_map, name="dataset"):
 def plot_exploration(df, col_map, name="dataset", save_dir=None):
     """
     Generate standard exploration plots for GWAS summary statistics.
+
+    Use for a specific dataset so your figures do not get bloated
     """
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     fig.suptitle(f"Data Exploration: {name}", fontsize=14)
